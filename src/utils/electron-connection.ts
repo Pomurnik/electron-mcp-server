@@ -108,6 +108,66 @@ export async function findElectronTarget(options?: WindowTargetOptions): Promise
 }
 
 /**
+ * Send an arbitrary CDP method call to an Electron application.
+ * Unlike executeInElectron (which only does Runtime.evaluate), this can invoke
+ * any Chrome DevTools Protocol method (e.g. Input.dispatchMouseEvent).
+ * @param method - CDP method name (e.g. "Input.dispatchMouseEvent")
+ * @param params - Method parameters
+ * @param target - Optional DevTools target to connect to
+ * @returns The raw CDP result object
+ * @example
+ * sendCDPMethod('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 100, y: 200 })
+ */
+export async function sendCDPMethod(
+  method: string,
+  params: Record<string, unknown>,
+  target?: DevToolsTarget,
+): Promise<any> {
+  const targetInfo = target || (await findElectronTarget());
+
+  if (!targetInfo.webSocketDebuggerUrl) {
+    throw new Error('No WebSocket debugger URL available');
+  }
+
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(targetInfo.webSocketDebuggerUrl);
+    const messageId = Math.floor(Math.random() * 1000000);
+
+    const timeout = setTimeout(() => {
+      ws.close();
+      reject(new Error(`CDP method timeout (10s): ${method}`));
+    }, 10000);
+
+    ws.on('open', () => {
+      logger.debug(`Sending CDP method: ${method}`);
+      ws.send(JSON.stringify({ id: messageId, method, params }));
+    });
+
+    ws.on('message', (data) => {
+      try {
+        const response = JSON.parse(data.toString());
+        if (response.id === messageId) {
+          clearTimeout(timeout);
+          ws.close();
+          if (response.error) {
+            reject(new Error(`CDP error (${method}): ${response.error.message}`));
+          } else {
+            resolve(response.result ?? null);
+          }
+        }
+      } catch (error) {
+        logger.warn(`Failed to parse CDP response:`, error);
+      }
+    });
+
+    ws.on('error', (error) => {
+      clearTimeout(timeout);
+      reject(new Error(`WebSocket error: ${error.message}`));
+    });
+  });
+}
+
+/**
  * Execute JavaScript code in an Electron application via Chrome DevTools Protocol
  */
 export async function executeInElectron(

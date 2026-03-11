@@ -42,6 +42,8 @@ Enhanced UI interaction commands:
 - 'fill_input': Fill input fields by selector, placeholder text, or associated label
 - 'select_option': Select dropdown options by value or text
 - 'send_keyboard_shortcut': Send keyboard shortcuts like 'Ctrl+N', 'Meta+N', 'Enter', 'Escape'
+- 'hover_by_selector': Hover over element by CSS selector using CDP-level mouse events (triggers tooltips, popovers)
+- 'hover_by_text': Hover over element by visible text using CDP-level mouse events (triggers tooltips, popovers)
 - 'navigate_to_hash': Safely navigate to hash routes (e.g., '#create', '#settings')
 - 'get_page_structure': Get organized overview of page elements (buttons, inputs, selects, links)
 - 'debug_elements': Get debugging info about buttons and form elements on the page
@@ -57,6 +59,8 @@ Examples:
 - fill_input: {"placeholder": "Enter name", "value": "John Doe"}
 - fill_input: {"selector": "#email", "value": "user@example.com"}
 - send_keyboard_shortcut: {"text": "Enter"}
+- hover_by_selector: {"selector": ".my-element"}
+- hover_by_text: {"text": "Claude Code"}
 - eval: {"code": "document.title"}
 
 Use 'get_page_structure' or 'debug_elements' first to understand available elements, then use specific interaction commands.

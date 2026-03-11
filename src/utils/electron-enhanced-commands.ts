@@ -1,4 +1,9 @@
-import { executeInElectron, findElectronTarget, WindowTargetOptions } from './electron-connection';
+import {
+  executeInElectron,
+  findElectronTarget,
+  sendCDPMethod,
+  WindowTargetOptions,
+} from './electron-connection';
 import { generateFindElementsCommand, generateClickByTextCommand } from './electron-commands';
 import {
   generateFillInputCommand,
@@ -379,6 +384,64 @@ export async function sendCommandToElectron(
         }'); 'Console message sent'`;
         break;
 
+      case 'hover_by_selector':
+      case 'hover_by_text': {
+        const isHoverByText = command.toLowerCase() === 'hover_by_text';
+        const hoverSearch = isHoverByText ? args?.text : args?.selector;
+
+        if (!hoverSearch) {
+          return isHoverByText
+            ? 'ERROR: Missing text. Use: {"text": "element text"}.'
+            : 'ERROR: Missing selector. Use: {"selector": "css-selector"}.';
+        }
+
+        // Step 1: Find element coordinates via Runtime.evaluate
+        const findExpr = isHoverByText
+          ? `(function() {
+              const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+              const search = ${JSON.stringify(hoverSearch)}.toLowerCase();
+              while (walker.nextNode()) {
+                if (walker.currentNode.textContent.trim().toLowerCase().includes(search)) {
+                  const el = walker.currentNode.parentElement;
+                  if (el) {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+                    }
+                  }
+                }
+              }
+              return null;
+            })()`
+          : `(function() {
+              const el = document.querySelector(${JSON.stringify(hoverSearch)});
+              if (!el) return null;
+              const rect = el.getBoundingClientRect();
+              if (rect.width === 0 || rect.height === 0) return null;
+              return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+            })()`;
+
+        const coordResult = await executeInElectron(findExpr, target);
+
+        // Parse coordinates from the result
+        const coordMatch = coordResult.match(/\{[\s\S]*?"x":\s*([\d.]+)[\s\S]*?"y":\s*([\d.]+)/);
+        if (!coordMatch) {
+          return `Element not found: ${hoverSearch}`;
+        }
+
+        const hoverX = Math.round(parseFloat(coordMatch[1]));
+        const hoverY = Math.round(parseFloat(coordMatch[2]));
+
+        // Step 2: Dispatch CDP-level mouse move (triggers browser's native pointer tracking)
+        await sendCDPMethod(
+          'Input.dispatchMouseEvent',
+          { type: 'mouseMoved', x: hoverX, y: hoverY, button: 'none', pointerType: 'mouse' },
+          target,
+        );
+
+        return `✅ Hovered at (${hoverX}, ${hoverY}) on: ${hoverSearch}`;
+      }
+
       case 'eval':
         const rawCode = typeof args === 'string' ? args : args?.code || command;
         // Enhanced eval with better error handling and result reporting
@@ -557,6 +620,30 @@ export async function debugElements(): Promise<string> {
  */
 export async function verifyFormState(): Promise<string> {
   return sendCommandToElectron('verify_form_state');
+}
+
+/**
+ * Hover over an element by CSS selector using CDP-level mouse events.
+ * Triggers browser's native pointer tracking (works with Radix UI Tooltip, etc.)
+ * @param selector - CSS selector of the element to hover
+ * @returns Result message
+ * @example
+ * hoverBySelector('.agent-item') // => "✅ Hovered at (100, 200) on: .agent-item"
+ */
+export async function hoverBySelector(selector: string): Promise<string> {
+  return sendCommandToElectron('hover_by_selector', { selector });
+}
+
+/**
+ * Hover over an element by visible text using CDP-level mouse events.
+ * Triggers browser's native pointer tracking (works with Radix UI Tooltip, etc.)
+ * @param text - Visible text of the element to hover
+ * @returns Result message
+ * @example
+ * hoverByText('Claude Code') // => "✅ Hovered at (80, 395) on: Claude Code"
+ */
+export async function hoverByText(text: string): Promise<string> {
+  return sendCommandToElectron('hover_by_text', { text });
 }
 export async function getTitle(): Promise<string> {
   return sendCommandToElectron('get_title');
