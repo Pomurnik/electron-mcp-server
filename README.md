@@ -6,6 +6,8 @@
 
 A powerful Model Context Protocol (MCP) server that provides comprehensive Electron application automation, debugging, and observability capabilities. Supercharge your Electron development workflow with AI-powered automation through Chrome DevTools Protocol integration.
 
+> **⚠️ Breaking change in v2.0** — the single `send_command_to_electron` tool has been split into ~40 individual `electron_*` tools (e.g. `electron_click_by_selector`, `electron_fill_input`). This dramatically improves LLM tool selection accuracy. **Read [MIGRATION.md](./MIGRATION.md) for the full v1 → v2 mapping.** v1.x stays available via `npm install @laststance/electron-mcp-server@^1.7`.
+
 ## Demo
 
 See the Electron MCP Server in action:
@@ -137,6 +139,13 @@ See [SECURITY_CONFIG.md](./SECURITY_CONFIG.md) for detailed security documentati
 ## 🎯 Proper MCP Usage Guide
 
 ### ⚠️ Critical: Argument Structure
+
+> **Heads up — v1 docs from here onward.** The sections below (argument
+> structure, `send_command_to_electron` tool reference, and the long form of
+> the v1 examples) describe the **v1 API**. v2.0 splits that single tool into
+> ~40 individual `electron_*` tools. If you are on v2, jump straight to
+> [MIGRATION.md](./MIGRATION.md) — the v2 tools take their arguments
+> top-level, so the structure pitfall described here no longer applies.
 
 **The most common mistake** when using this MCP server is incorrect argument structure for the `send_command_to_electron` tool.
 
@@ -393,6 +402,10 @@ Capture high-quality screenshots using Playwright and Chrome DevTools Protocol.
 - Fallback to platform-specific tools if needed
 
 ### `send_command_to_electron`
+
+> **v1 only.** Removed in v2. See [MIGRATION.md](./MIGRATION.md) for the
+> per-command replacement (`electron_click_by_selector`, `electron_fill_input`,
+> `electron_eval`, etc.).
 
 Execute JavaScript commands in the running Electron application via WebSocket.
 
