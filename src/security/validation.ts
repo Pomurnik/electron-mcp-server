@@ -75,6 +75,32 @@ export class InputValidator {
     'globalThis',
   ];
 
+  /**
+   * Subset of identifiers that must never appear in any eval payload, regardless
+   * of the security level or `safePatterns` allowlist. Compared to the broader
+   * {@link DANGEROUS_KEYWORDS} (used for non-eval command content), this list
+   * intentionally excludes Node.js module names that collide with legitimate
+   * web platform identifiers (`url` ↔ `document.URL`, `crypto` ↔ `window.crypto`,
+   * `path` ↔ pathname helpers, etc.) so we don't reject documented safe payloads
+   * while still catching the prototype-pollution / process-escape primitives that
+   * Issue #9 was about.
+   */
+  private static readonly EVAL_CRITICAL_KEYWORDS = [
+    'Function',
+    'constructor',
+    '__proto__',
+    'prototype',
+    'process',
+    'require',
+    'import',
+    'global',
+    'globalThis',
+    'child_process',
+    'worker_threads',
+    'vm',
+    'repl',
+  ];
+
   private static readonly XSS_PATTERNS = [
     /<script[^>]*>[\s\S]*?<\/script>/gi,
     /javascript:/gi,
@@ -204,7 +230,16 @@ export class InputValidator {
   }
 
   /**
-   * Special validation for eval commands - validates the actual code to be executed
+   * Special validation for eval commands - validates the actual code to be executed.
+   *
+   * Defense-in-depth: {@link EVAL_CRITICAL_KEYWORDS} are screened on every eval
+   * payload regardless of whether it matches a `safePatterns` shortcut, because
+   * the generic property-access pattern (`/^[\w.[\]'"]+$/`) was previously letting
+   * `process.platform`, `globalThis.foo`, `__proto__.constructor` etc. through
+   * unchecked (Issue #9). The list is intentionally narrower than the broader
+   * `DANGEROUS_KEYWORDS` used by `validateCommandContent`, so legitimate web
+   * platform expressions like `document.URL` are not flagged. The function-call
+   * / assignment / obfuscation checks are still gated by `isSafe`.
    */
   private static validateEvalContent(code: string): {
     errors: string[];
@@ -213,6 +248,18 @@ export class InputValidator {
     const errors: string[] = [];
     const riskFactors: string[] = [];
     const profile = SECURITY_PROFILES[this.securityLevel];
+
+    // Defense-in-depth: scan only the eval-critical subset unconditionally so we
+    // catch prototype-pollution / process-escape primitives (Issue #9) without
+    // false-positiving identifiers shared with the web platform (Issue: PR #22
+    // CodeRabbit feedback — `document.URL` was being rejected by `\burl\b`).
+    for (const keyword of this.EVAL_CRITICAL_KEYWORDS) {
+      const regex = new RegExp(`\\b${keyword}\\b`, 'g');
+      if (regex.test(code)) {
+        errors.push(`Dangerous keyword detected in eval: ${keyword}`);
+        riskFactors.push(`eval_dangerous_keyword_${keyword}`);
+      }
+    }
 
     // Allow simple safe operations
     const safePatterns = [
@@ -253,15 +300,6 @@ export class InputValidator {
       uiInteractionPatterns.some((pattern) => pattern.test(code.trim()));
 
     if (!isSafe) {
-      // Check for dangerous keywords in eval content
-      for (const keyword of this.DANGEROUS_KEYWORDS) {
-        const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
-        if (regex.test(code)) {
-          errors.push(`Dangerous keyword detected in eval: ${keyword}`);
-          riskFactors.push(`eval_dangerous_keyword_${keyword}`);
-        }
-      }
-
       // Check for function calls based on security profile
       const hasFunctionCall = /\(\s*\)|\w+\s*\(/.test(code);
       if (hasFunctionCall) {
@@ -282,8 +320,23 @@ export class InputValidator {
         }
       }
 
-      // Check for assignment operations based on security profile
-      if (/=(?!=)/.test(code) && !profile.allowAssignments) {
+      // Detect any assignment operator while excluding the comparison and arrow
+      // forms (`==`, `===`, `!=`, `!==`, `<=`, `>=`, `=>`).
+      //
+      // The standalone `=` branch uses a negative lookbehind (rejects `=` after
+      // `[=!<>]`) plus a negative lookahead (rejects `=` before `[=>]`).
+      // Issue #21: the previous `/=(?!=)/` flagged `===`/`!==`/arrow funcs as
+      // assignments.
+      //
+      // Compound assignment operators must be matched explicitly, because the
+      // lookbehind only inspects the single character before `=` — for `<<=`
+      // the `=` is preceded by `<`, which sits in the lookbehind exclusion set
+      // and would otherwise let `a <<= 1` bypass `allowAssignments` (PR #22
+      // CodeRabbit round 2). Longest alternatives are listed first so the
+      // engine prefers e.g. `>>>=` over the `>>=` substring.
+      const assignmentPattern =
+        /<<=|>>>=|>>=|\*\*=|&&=|\|\|=|\?\?=|[+\-*/%&|^]=|(?<![=!<>])=(?![=>])/;
+      if (assignmentPattern.test(code) && !profile.allowAssignments) {
         errors.push(`Assignment operations in eval are restricted`);
         riskFactors.push('eval_assignment');
       }
