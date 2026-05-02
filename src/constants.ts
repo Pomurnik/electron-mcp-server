@@ -35,3 +35,12 @@ export const CLICK_BY_SELECTOR_RATE_LIMIT_MS = 1000;
  * the previous threshold (2000ms) was tuned empirically for React forms.
  */
 export const CLICK_BY_TEXT_RATE_LIMIT_MS = 2000;
+
+/**
+ * Prefix that `executeInElectron` (src/utils/electron-connection.ts) prepends
+ * to every successful Runtime.evaluate result string. Centralized here so
+ * `electron_eval` can detect the wrapper and avoid double-prefixing
+ * (`✅ Result: ✅ Result: ...`) when its IIFE return is fed back through the
+ * same helper. See #11 for the original double-prefix bug.
+ */
+export const EXECUTE_IN_ELECTRON_RESULT_PREFIX = '✅ Result: ';
