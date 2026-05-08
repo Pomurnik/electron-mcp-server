@@ -26,7 +26,7 @@ import { securityManager } from './security/manager';
  *   `commandsByName` registry. This replaces the v1 `send_command_to_electron`
  *   switch/case dispatch and removes the `command/args` indirection.
  */
-export async function handleToolCall(request: z.infer<typeof CallToolRequestSchema>) {
+export async function handleToolCall(request: any) {
   const { name, arguments: args } = request.params;
 
   const sourceIP = (request as any).meta?.sourceIP;
